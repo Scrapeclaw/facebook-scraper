@@ -91,6 +91,14 @@ class FacebookScraper:
         from anti_detection import AntiDetectionManager
         self.anti_detection_mgr = AntiDetectionManager(DATA_DIR)
 
+        # Initialize proxy manager
+        from proxy_manager import ProxyManager
+        self.proxy_mgr = ProxyManager.from_config(str(CONFIG_PATH))
+        if self.proxy_mgr.is_enabled:
+            logger.info(f"Proxy enabled: {self.proxy_mgr}")
+        else:
+            logger.info("Proxy disabled — running without residential proxy.")
+
         # Session state: set True in start_browser() when a saved session is loaded
         self._session_restored = False
 
@@ -141,6 +149,12 @@ class FacebookScraper:
             logger.info(f"Restoring saved session for {self.email}...")
             context_options['storage_state'] = str(session_path)
             self._session_restored = True
+
+        # Apply residential proxy if enabled
+        proxy_dict = self.proxy_mgr.get_playwright_proxy()
+        if proxy_dict:
+            context_options['proxy'] = proxy_dict
+            logger.info(f"Browser using proxy: {self.proxy_mgr.provider} → {self.proxy_mgr.host}:{self.proxy_mgr.port}")
 
         self.context = await self.browser.new_context(**context_options)
 

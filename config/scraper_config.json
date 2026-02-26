@@ -1,4 +1,16 @@
 {
+  "proxy": {
+    "enabled": false,
+    "provider": "netnut",
+    "host": "",
+    "port": 0,
+    "username": "",
+    "password": "",
+    "country": "",
+    "sticky": true,
+    "sticky_ttl_minutes": 10,
+    "protocol": "http"
+  },
   "google_search": {
     "enabled": true,
     "api_key": "",
