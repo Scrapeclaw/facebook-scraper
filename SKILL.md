@@ -1,4 +1,4 @@
-````skill
+
 # Facebook Page & Group Scraper
 
 > Part of **[ScrapeClaw](https://www.scrapeclaw.cc/)** — a suite of production-ready, agentic social media scrapers for Instagram, YouTube, X/Twitter, and Facebook built with Python & Playwright, no API keys required.
