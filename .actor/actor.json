@@ -5,8 +5,9 @@
   "description": "Discovers and scrapes Facebook pages, groups and public profiles. Outputs follower/likes counts, about text, contact info, recent posts and thumbnails.",
   "version": "0.1",
   "input": {
+    "title": "Facebook Page & Group Scraper Input",
     "schemaVersion": 1,
-    "schema": ".actor/input_schema.json"
+    "schema": "input_schema.json"
   },
   "storages": {
     "dataset": {
