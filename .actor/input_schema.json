@@ -92,7 +92,6 @@
     "googleApiKey": {
       "title": "Google API Key",
       "type": "string",
-      "default": "",
       "description": "Google Custom Search API key. Used to discover pages/groups via Google.",
       "editor": "textfield",
       "isSecret": true
@@ -100,7 +99,6 @@
     "googleSearchEngineId": {
       "title": "Google Search Engine ID (cx)",
       "type": "string",
-      "default": "",
       "description": "Google Custom Search Engine ID. Required when googleApiKey is set.",
       "editor": "textfield"
     },
