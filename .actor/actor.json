@@ -1,0 +1,54 @@
+{
+  "actorSpecification": 1,
+  "name": "facebook-page-scraper",
+  "title": "Facebook Page & Group Scraper",
+  "description": "Discovers and scrapes Facebook pages, groups and public profiles. Outputs follower/likes counts, about text, contact info, recent posts and thumbnails.",
+  "version": "0.1",
+  "input": {
+    "schemaVersion": 1,
+    "schema": ".actor/input_schema.json"
+  },
+  "storages": {
+    "dataset": {
+      "actorSpecification": 1,
+      "views": {
+        "overview": {
+          "title": "Facebook Pages & Groups",
+          "transformation": {
+            "fields": [
+              "page_name",
+              "display_name",
+              "entity_type",
+              "page_likes",
+              "followers",
+              "page_tier",
+              "is_verified",
+              "category",
+              "location",
+              "website",
+              "phone",
+              "scrape_timestamp"
+            ]
+          },
+          "display": {
+            "component": "table",
+            "properties": {
+              "page_name":       { "label": "Page Name",     "format": "text" },
+              "display_name":    { "label": "Display Name",  "format": "text" },
+              "entity_type":     { "label": "Type",          "format": "text" },
+              "page_likes":      { "label": "Likes",         "format": "number" },
+              "followers":       { "label": "Followers",     "format": "number" },
+              "page_tier":       { "label": "Tier",          "format": "text" },
+              "is_verified":     { "label": "Verified",      "format": "boolean" },
+              "category":        { "label": "Category",      "format": "text" },
+              "location":        { "label": "Location",      "format": "text" },
+              "website":         { "label": "Website",       "format": "text" },
+              "phone":           { "label": "Phone",         "format": "text" },
+              "scrape_timestamp":{ "label": "Scraped At",    "format": "text" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

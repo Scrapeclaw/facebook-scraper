@@ -1,0 +1,53 @@
+{
+  "example": {
+    "page_name": "nycfoodiespot",
+    "display_name": "NYC Foodie Spot",
+    "entity_type": "page",
+    "page_likes": 28500,
+    "followers": 31200,
+    "page_tier": "mid",
+    "is_verified": false,
+    "about": "Best food spots in New York City. Updated daily.",
+    "phone": "+1 212-555-0100",
+    "email": "hello@nycfoodiespot.com",
+    "website": "https://nycfoodiespot.com",
+    "address": "123 Broadway, New York, NY 10001",
+    "hours": "Mon–Fri: 9am–6pm",
+    "category": "restaurant",
+    "location": "New York",
+    "profile_pic_url": "https://scontent.example.com/profile.jpg",
+    "cover_photo_url": "https://scontent.example.com/cover.jpg",
+    "recent_posts": [
+      {
+        "text": "Check out our latest review of...",
+        "timestamp": "2025-01-01T12:00:00",
+        "likes": 420,
+        "comments": 38,
+        "shares": 12,
+        "image_url": "https://scontent.example.com/post1.jpg"
+      }
+    ],
+    "scrape_timestamp": "2025-01-01T14:30:00"
+  },
+  "fields": {
+    "page_name":          "Facebook page/group handle or numeric ID",
+    "display_name":       "Full display name shown on the page",
+    "entity_type":        "page | group | profile",
+    "page_likes":         "Total page likes (integer)",
+    "followers":          "Total followers (integer)",
+    "page_tier":          "nano (<1 K) | micro (<10 K) | mid (<100 K) | macro (<1 M) | mega (≥1 M)",
+    "is_verified":        "Has Facebook blue verified badge",
+    "about":              "Page 'About' / bio text",
+    "phone":              "Business phone number (if listed)",
+    "email":              "Business email (if listed)",
+    "website":            "Website link from page info",
+    "address":            "Street address (if listed)",
+    "hours":              "Business hours string (if listed)",
+    "category":           "Niche category used during discovery",
+    "location":           "City/region used during discovery",
+    "profile_pic_url":    "URL of current profile picture",
+    "cover_photo_url":    "URL of current cover photo",
+    "recent_posts":       "Array of recent post dicts (text, timestamp, likes, comments, shares, image_url)",
+    "scrape_timestamp":   "ISO-8601 timestamp of when the page was scraped"
+  }
+}

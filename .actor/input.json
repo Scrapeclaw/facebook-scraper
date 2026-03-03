@@ -1,0 +1,20 @@
+{
+  "mode": "full",
+  "entityType": "page",
+  "region": "us",
+  "categories": ["restaurant", "fitness", "retail", "beauty", "healthcare"],
+  "locations": ["New York", "Los Angeles", "Miami", "Chicago"],
+  "facebookEmail": "",
+  "facebookPassword": "",
+  "maxPages": 50,
+  "minLikes": 1000,
+  "downloadThumbnails": false,
+  "googleApiKey": "",
+  "googleSearchEngineId": "",
+  "skipProxyValidation": false,
+  "dropProxyOnFailure": false,
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
+}

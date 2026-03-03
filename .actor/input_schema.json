@@ -1,0 +1,130 @@
+{
+  "title": "Facebook Page & Group Scraper Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "mode": {
+      "title": "Mode",
+      "type": "string",
+      "enum": ["full", "discovery_only", "scrape_pages"],
+      "default": "full",
+      "description": "full = discover pages then scrape them; discovery_only = only find page names; scrape_pages = scrape the pageNames list directly.",
+      "editor": "select"
+    },
+    "entityType": {
+      "title": "Entity Type",
+      "type": "string",
+      "enum": ["page", "group", "profile"],
+      "default": "page",
+      "description": "Type of Facebook entity to scrape: page (business/brand), group, or profile.",
+      "editor": "select"
+    },
+    "region": {
+      "title": "Region Preset",
+      "type": "string",
+      "enum": ["us", "uk", "ind", "eur", "gulf", "east"],
+      "default": "us",
+      "description": "Region preset that controls the default locations and categories used during discovery.",
+      "editor": "select"
+    },
+    "categories": {
+      "title": "Categories",
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of business/interest categories to discover. Overrides the region preset.",
+      "editor": "stringList"
+    },
+    "locations": {
+      "title": "Locations",
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of cities or regions to search. Overrides the region preset.",
+      "editor": "stringList"
+    },
+    "pageNames": {
+      "title": "Page Names (scrape_pages mode)",
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of Facebook page/group names or IDs to scrape directly. Used when mode = scrape_pages.",
+      "editor": "stringList"
+    },
+    "facebookEmail": {
+      "title": "Facebook Email",
+      "type": "string",
+      "description": "Facebook account email for login. Required for scraping pages.",
+      "editor": "textfield",
+      "isSecret": false
+    },
+    "facebookPassword": {
+      "title": "Facebook Password",
+      "type": "string",
+      "description": "Facebook account password.",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "maxPages": {
+      "title": "Max Pages to Scrape",
+      "type": "integer",
+      "default": 50,
+      "minimum": 1,
+      "description": "Maximum number of pages/groups to scrape per run."
+    },
+    "minLikes": {
+      "title": "Min Likes / Members",
+      "type": "integer",
+      "default": 1000,
+      "minimum": 0,
+      "description": "Pages/groups below this threshold are skipped."
+    },
+    "downloadThumbnails": {
+      "title": "Download Thumbnails",
+      "type": "boolean",
+      "default": false,
+      "description": "If true, profile pictures, cover photos and post images are downloaded and stored in the KV store."
+    },
+    "maxThumbnailsPerPage": {
+      "title": "Max Thumbnails Per Page",
+      "type": "integer",
+      "default": 6,
+      "minimum": 0,
+      "description": "Maximum number of content images to download per page."
+    },
+    "googleApiKey": {
+      "title": "Google API Key",
+      "type": "string",
+      "default": "",
+      "description": "Google Custom Search API key. Used to discover pages/groups via Google.",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "googleSearchEngineId": {
+      "title": "Google Search Engine ID (cx)",
+      "type": "string",
+      "default": "",
+      "description": "Google Custom Search Engine ID. Required when googleApiKey is set.",
+      "editor": "textfield"
+    },
+    "skipProxyValidation": {
+      "title": "Skip Proxy Validation",
+      "type": "boolean",
+      "default": false,
+      "description": "Skip the proxy connectivity test before scraping. Useful when residential proxies are slow to validate.",
+      "editor": "checkbox"
+    },
+    "dropProxyOnFailure": {
+      "title": "Drop Proxy on Validation Failure",
+      "type": "boolean",
+      "default": false,
+      "description": "If true and proxy validation fails, run without a proxy. If false, continue with proxy anyway.",
+      "editor": "checkbox"
+    },
+    "proxyConfiguration": {
+      "title": "Proxy Configuration",
+      "type": "object",
+      "description": "Apify proxy configuration. Use RESIDENTIAL group for best results with Facebook.",
+      "editor": "proxy",
+      "prefill": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"] }
+    }
+  },
+  "required": ["facebookEmail", "facebookPassword"]
+}
