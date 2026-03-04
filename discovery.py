@@ -337,7 +337,8 @@ async def _discover_pages_facebook_native_async(
             elif entity_type == 'profile':
                 search_url = f'https://www.facebook.com/search/people/?q={quote_plus(search_query)}'
             else:
-                search_url = f'https://www.facebook.com/search/pages/?q={quote_plus(search_query)}'
+                # top search returns a broader set of results (pages, profiles, groups)
+                search_url = f'https://www.facebook.com/search/top/?q={quote_plus(search_query)}'
 
             logger.info(f"🔍 Searching Facebook for: '{search_query}' ({entity_type}s)")
             await page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
