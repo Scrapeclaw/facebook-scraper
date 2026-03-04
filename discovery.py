@@ -81,17 +81,21 @@ def discover_pages_google(
     category: str, 
     entity_type: str = 'page',
     num_results: int = 10, 
-    config: Dict = None
+    config: Dict = None,
+    facebook_email: str = None,
+    facebook_password: str = None
 ) -> List[str]:
     """
-    Discover Facebook pages/groups using Google Custom Search API
+    Discover Facebook pages/groups - tries native Facebook search first, then Google API as fallback
     
     Args:
         location: Location/city to search (e.g., 'New York', 'Miami')
         category: Category to search (e.g., 'restaurant', 'fitness')
         entity_type: Type of entity to discover ('page', 'group', 'profile')
-        num_results: Number of results to fetch per query (max 10)
+        num_results: Number of results to fetch
         config: Configuration dictionary (optional)
+        facebook_email: Facebook login email (optional)
+        facebook_password: Facebook login password (optional)
     
     Returns:
         List of Facebook page/group names
@@ -100,6 +104,23 @@ def discover_pages_google(
         if config is None:
             config = load_config()
         
+        # Try Facebook native search first (if credentials are available)
+        if facebook_email and facebook_password:
+            logger.info("📱 Attempting Facebook native search (avoids CAPTCHA)...")
+            fb_names = discover_pages_facebook_native(
+                location, 
+                category, 
+                entity_type, 
+                num_results,
+                facebook_email,
+                facebook_password
+            )
+            if fb_names:
+                logger.info(f"✅ Facebook native search found {len(fb_names)} {entity_type}s")
+                return fb_names
+        
+        # Fallback to Google Custom Search API
+        logger.info("Using Google Custom Search API as fallback...")
         google_config = config.get('google_search', {})
         if not google_config.get('enabled', False):
             logger.warning("Google Search API is disabled in config")
@@ -110,8 +131,8 @@ def discover_pages_google(
         queries_per_location = google_config.get('queries_per_location', 3)
         
         if not api_key or not cx:
-            logger.warning("Google API key or Search Engine ID not configured. Using Chromium browser search (Google) fallback.")
-            return discover_pages_browser_sync(location, category, entity_type, num_results)
+            logger.warning("Google API key or Search Engine ID not configured.")
+            return []
         
         # Generate search queries based on entity type
         if entity_type == 'group':
@@ -176,8 +197,195 @@ def discover_pages_google(
         return unique_names
             
     except Exception as e:
-        logger.error(f"Error in Google Facebook discovery: {e}")
+        logger.error(f"Error in Facebook discovery: {e}")
         return []
+
+
+def discover_pages_facebook_native(
+    location: str,
+    category: str,
+    entity_type: str = 'page',
+    num_results: int = 10,
+    facebook_email: str = None,
+    facebook_password: str = None
+) -> List[str]:
+    """
+    Discover Facebook pages/groups by searching directly on Facebook.
+    Uses login credentials to authenticate and search, avoiding Google CAPTCHAs.
+    
+    Args:
+        location: Location/city to search
+        category: Category to search
+        entity_type: Type of entity ('page', 'group', 'profile')
+        num_results: Number of results to fetch
+        facebook_email: Facebook email for login
+        facebook_password: Facebook password for login
+    
+    Returns:
+        List of discovered page/group names
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(
+                    asyncio.run,
+                    _discover_pages_facebook_native_async(
+                        location, category, entity_type, num_results, facebook_email, facebook_password
+                    )
+                )
+                return future.result(timeout=180)
+        else:
+            return loop.run_until_complete(
+                _discover_pages_facebook_native_async(
+                    location, category, entity_type, num_results, facebook_email, facebook_password
+                )
+            )
+    except Exception as e:
+        logger.error(f"Facebook native discovery failed: {e}")
+        return []
+
+
+async def _discover_pages_facebook_native_async(
+    location: str,
+    category: str,
+    entity_type: str = 'page',
+    num_results: int = 10,
+    facebook_email: str = None,
+    facebook_password: str = None
+) -> List[str]:
+    """
+    Async version of Facebook native search using Playwright with login.
+    """
+    from playwright.async_api import async_playwright
+    from urllib.parse import quote_plus
+
+    ctx_opts = {'viewport': {'width': 1280, 'height': 800}}
+    stealth_js = "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+
+    try:
+        from anti_detection import BrowserFingerprint
+        fp_mgr = BrowserFingerprint(BASE_DIR / 'data')
+        fingerprint = fp_mgr.get_random_fingerprint()
+        ctx_opts = fp_mgr.get_context_options(fingerprint)
+        stealth_js = fp_mgr.get_stealth_scripts(fingerprint)
+    except Exception as e:
+        logger.debug(f"Could not load anti-detection fingerprint: {e}")
+
+    found_names: set = set()
+    search_query = f'{location} {category}'
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=False,
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+            ]
+        )
+        context = await browser.new_context(**ctx_opts)
+        page = await context.new_page()
+        await page.add_init_script(stealth_js)
+
+        try:
+            # Navigate to Facebook
+            logger.info("🔐 Logging into Facebook...")
+            await page.goto('https://www.facebook.com', wait_until='domcontentloaded', timeout=30000)
+            await asyncio.sleep(random.uniform(2, 4))
+
+            # Check if already logged in
+            if 'login' in page.url or 'checkpoint' in page.url:
+                if not facebook_email or not facebook_password:
+                    logger.warning("Not logged in and no credentials provided. Skipping login.")
+                    await browser.close()
+                    return []
+
+                # Perform login
+                logger.info("Entering credentials...")
+                try:
+                    # Enter email
+                    await page.fill('input[name="email"]', facebook_email, timeout=10000)
+                    await asyncio.sleep(0.5)
+                    
+                    # Enter password
+                    await page.fill('input[name="pass"]', facebook_password, timeout=10000)
+                    await asyncio.sleep(0.5)
+                    
+                    # Click login button
+                    await page.click('button[name="login"]', timeout=10000)
+                    await asyncio.sleep(3)
+                    
+                    # Wait for redirect after login
+                    try:
+                        await page.wait_for_url(lambda url: 'login' not in url and 'checkpoint' not in url, timeout=15000)
+                    except:
+                        pass
+                    
+                    await asyncio.sleep(random.uniform(2, 4))
+                    logger.info("✅ Login successful")
+                    
+                except Exception as e:
+                    logger.error(f"Login failed: {e}")
+                    await browser.close()
+                    return []
+
+            # Construct search URL based on entity type
+            if entity_type == 'group':
+                search_url = f'https://www.facebook.com/search/groups/?q={quote_plus(search_query)}'
+            elif entity_type == 'profile':
+                search_url = f'https://www.facebook.com/search/people/?q={quote_plus(search_query)}'
+            else:
+                search_url = f'https://www.facebook.com/search/pages/?q={quote_plus(search_query)}'
+
+            logger.info(f"🔍 Searching Facebook for: '{search_query}' ({entity_type}s)")
+            await page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
+            await asyncio.sleep(random.uniform(2, 4))
+
+            # Scroll multiple times to load more results
+            logger.info("📜 Loading search results...")
+            for i in range(5):
+                try:
+                    await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    await asyncio.sleep(random.uniform(1.5, 2.5))
+                except:
+                    pass
+
+            # Extract page list
+            html = await page.content()
+
+            # Parse relevant page names from HTML
+            skip_set = set(FACEBOOK_BLACKLIST) | {'search', 'hashtag', 'public', 'undefined'}
+            
+            # More aggressive regex to capture Facebook profile URLs
+            patterns = [
+                r'facebook\.com/([a-zA-Z0-9._-]{3,60})(?:[/?#"\'\\]|&amp;|$)',  # Profile pages
+                r'href=["\']https?://www\.facebook\.com/([a-zA-Z0-9._-]{3,60})',  # Links
+                r'"profile_url":"https://www\.facebook\.com/([a-zA-Z0-9._-]{3,60})',  # Profile URLs in JSON
+            ]
+            
+            for pattern in patterns:
+                hits = re.findall(pattern, html)
+                for name in hits:
+                    name = name.strip('.').strip('-')
+                    if (name.lower() not in skip_set
+                            and len(name) > 2
+                            and not name.isdigit()
+                            and re.search(r'[a-zA-Z0-9]{3,}', name)):
+                        found_names.add(name)
+                        logger.info(f"  Found: {name}")
+
+            # Limit results
+            results = list(found_names)[:num_results]
+            logger.info(f"✅ Facebook native search found {len(results)} {entity_type}s")
+
+        except Exception as e:
+            logger.error(f"Facebook search error: {e}")
+        finally:
+            await browser.close()
+
+    return list(found_names)[:num_results]
 
 
 def _extract_facebook_name(url: str, entity_type: str = 'page') -> Optional[str]:
@@ -530,9 +738,18 @@ def interactive_discovery():
     """Interactive mode - prompts for single location/category"""
     config = load_config()
     
+    # Get credentials from environment
+    facebook_email = os.getenv('FACEBOOK_EMAIL')
+    facebook_password = os.getenv('FACEBOOK_PASSWORD')
+    
     print("\n" + "="*50)
     print("🔍 Facebook Page & Group Discovery")
     print("="*50)
+    
+    if facebook_email:
+        print(f"\n✅ Using Facebook credentials: {facebook_email}")
+    else:
+        print("\n⚠️  No Facebook credentials found. Using Google API fallback (may hit CAPTCHAs).")
     
     # Get entity type
     print("\nEntity types:")
@@ -611,7 +828,15 @@ def interactive_discovery():
     print(f"\n🔎 Discovering {category} {entity_type}s in {location}...")
     
     # Discover pages/groups
-    page_names = discover_pages_google(location, category, entity_type, count, config)
+    page_names = discover_pages_google(
+        location, 
+        category, 
+        entity_type, 
+        count, 
+        config,
+        facebook_email,
+        facebook_password
+    )
     
     if page_names:
         queue_file = create_queue_file(location, category, page_names, entity_type)
@@ -627,9 +852,18 @@ def batch_discovery():
     """Batch mode - discover for multiple locations/categories"""
     config = load_config()
     
+    # Get credentials from environment
+    facebook_email = os.getenv('FACEBOOK_EMAIL')
+    facebook_password = os.getenv('FACEBOOK_PASSWORD')
+    
     print("\n" + "="*50)
     print("🔍 Batch Facebook Discovery")
     print("="*50)
+    
+    if facebook_email:
+        print(f"\n✅ Using Facebook credentials: {facebook_email}")
+    else:
+        print("\n⚠️  No Facebook credentials found. Using Google API fallback.")
     
     # Get entity type
     print("\nEntity types:")
@@ -677,7 +911,15 @@ def batch_discovery():
     for city in selected_cities:
         for category in selected_categories:
             print(f"\n🔎 {city} - {category} ({entity_type})...")
-            page_names = discover_pages_google(city, category, entity_type, count, config)
+            page_names = discover_pages_google(
+                city, 
+                category, 
+                entity_type, 
+                count, 
+                config,
+                facebook_email,
+                facebook_password
+            )
             
             if page_names:
                 queue_file = create_queue_file(city, category, page_names, entity_type)
@@ -696,13 +938,21 @@ def discover_command(
     category: str = None,
     entity_type: str = 'page',
     count: int = 10,
-    output_json: bool = False
+    output_json: bool = False,
+    facebook_email: str = None,
+    facebook_password: str = None
 ) -> Optional[Dict]:
     """
     Command-line discover function for agent integration
     
     Returns JSON-compatible dict if output_json=True
     """
+    # Get credentials from parameters or environment
+    if not facebook_email:
+        facebook_email = os.getenv('FACEBOOK_EMAIL')
+    if not facebook_password:
+        facebook_password = os.getenv('FACEBOOK_PASSWORD')
+    
     if not location or not category:
         if output_json:
             return {"error": "location and category are required"}
@@ -710,7 +960,15 @@ def discover_command(
         return None
     
     config = load_config()
-    page_names = discover_pages_google(location, category, entity_type, count, config)
+    page_names = discover_pages_google(
+        location, 
+        category, 
+        entity_type, 
+        count, 
+        config,
+        facebook_email,
+        facebook_password
+    )
     
     if page_names:
         queue_file = create_queue_file(location, category, page_names, entity_type)

@@ -115,6 +115,8 @@ def run_discovery(
     categories: List[str],
     locations: List[str],
     entity_type: str = "page",
+    facebook_email: str = None,
+    facebook_password: str = None,
 ) -> List[Dict]:
     """Use discovery.py to find Facebook page/group names."""
     from discovery import discover_pages_google, discover_pages_browser_sync
@@ -126,8 +128,16 @@ def run_discovery(
         for category in categories:
             logger.info(f"Discovering {entity_type}s: {category} in {location}")
             try:
-                if config["google_search"]["enabled"]:
-                    names = discover_pages_google(location, category, entity_type, 10, config)
+                if config["google_search"]["enabled"] or (facebook_email and facebook_password):
+                    names = discover_pages_google(
+                        location, 
+                        category, 
+                        entity_type, 
+                        10, 
+                        config,
+                        facebook_email,
+                        facebook_password
+                    )
                 else:
                     names = discover_pages_browser_sync(location, category, entity_type, 10)
 
@@ -441,6 +451,8 @@ async def main():
             )
             return
 
+        logger.info("✅ Facebook credentials provided - Discovery will use Facebook native search (avoids Google CAPTCHAs)")
+
         # ----------------------------------------------------------------
         # 2. Proxy configuration
         # ----------------------------------------------------------------
@@ -509,7 +521,7 @@ async def main():
 
         elif mode == "discovery_only":
             logger.info("discovery_only mode: discovering pages and pushing names to dataset…")
-            discovered = run_discovery(config, categories, locations, entity_type)
+            discovered = run_discovery(config, categories, locations, entity_type, fb_email, fb_password)
             logger.info(f"Discovered {len(discovered)} pages")
             for p in discovered:
                 await Actor.push_data(p)
@@ -526,7 +538,7 @@ async def main():
                 logger.info(f"Resuming from saved state ({len(state['pages'])} pages)")
                 pages_to_scrape = state["pages"]
             else:
-                discovered = run_discovery(config, categories, locations, entity_type)
+                discovered = run_discovery(config, categories, locations, entity_type, fb_email, fb_password)
                 logger.info(f"Discovery found {len(discovered)} pages")
                 pages_to_scrape = discovered
                 await Actor.set_value(
