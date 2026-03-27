@@ -83,7 +83,8 @@ def discover_pages_google(
     num_results: int = 10, 
     config: Dict = None,
     facebook_email: str = None,
-    facebook_password: str = None
+    facebook_password: str = None,
+    proxy_url: str = None,
 ) -> List[str]:
     """
     Discover Facebook pages/groups - tries native Facebook search first, then Google API as fallback
@@ -96,6 +97,7 @@ def discover_pages_google(
         config: Configuration dictionary (optional)
         facebook_email: Facebook login email (optional)
         facebook_password: Facebook login password (optional)
+        proxy_url: Full proxy URL (e.g. http://user:pass@host:port) forwarded to the browser
     
     Returns:
         List of Facebook page/group names
@@ -113,7 +115,8 @@ def discover_pages_google(
                 entity_type, 
                 num_results,
                 facebook_email,
-                facebook_password
+                facebook_password,
+                proxy_url=proxy_url,
             )
             if fb_names:
                 logger.info(f"✅ Facebook native search found {len(fb_names)} {entity_type}s")
@@ -207,7 +210,8 @@ def discover_pages_facebook_native(
     entity_type: str = 'page',
     num_results: int = 10,
     facebook_email: str = None,
-    facebook_password: str = None
+    facebook_password: str = None,
+    proxy_url: str = None,
 ) -> List[str]:
     """
     Discover Facebook pages/groups by searching directly on Facebook.
@@ -220,6 +224,7 @@ def discover_pages_facebook_native(
         num_results: Number of results to fetch
         facebook_email: Facebook email for login
         facebook_password: Facebook password for login
+        proxy_url: Full proxy URL forwarded to the Playwright browser
     
     Returns:
         List of discovered page/group names
@@ -232,14 +237,16 @@ def discover_pages_facebook_native(
                 future = pool.submit(
                     asyncio.run,
                     _discover_pages_facebook_native_async(
-                        location, category, entity_type, num_results, facebook_email, facebook_password
+                        location, category, entity_type, num_results,
+                        facebook_email, facebook_password, proxy_url,
                     )
                 )
                 return future.result(timeout=180)
         else:
             return loop.run_until_complete(
                 _discover_pages_facebook_native_async(
-                    location, category, entity_type, num_results, facebook_email, facebook_password
+                    location, category, entity_type, num_results,
+                    facebook_email, facebook_password, proxy_url,
                 )
             )
     except Exception as e:
@@ -253,7 +260,8 @@ async def _discover_pages_facebook_native_async(
     entity_type: str = 'page',
     num_results: int = 10,
     facebook_email: str = None,
-    facebook_password: str = None
+    facebook_password: str = None,
+    proxy_url: str = None,
 ) -> List[str]:
     """
     Async version of Facebook native search using Playwright with login.
@@ -276,6 +284,23 @@ async def _discover_pages_facebook_native_async(
     found_names: set = set()
     search_query = f'{location} {category}'
 
+    # Build Playwright proxy config from the raw proxy URL when provided.
+    # Playwright requires separate server/username/password keys — it does NOT
+    # parse credentials embedded in the server URL.
+    playwright_proxy = None
+    if proxy_url:
+        try:
+            from urllib.parse import urlparse as _urlparse
+            _p = _urlparse(proxy_url)
+            playwright_proxy = {"server": f"{_p.scheme}://{_p.hostname}:{_p.port}"}
+            if _p.username:
+                playwright_proxy["username"] = _p.username
+            if _p.password:
+                playwright_proxy["password"] = _p.password
+            logger.info(f"Discovery browser using proxy: {playwright_proxy['server']}")
+        except Exception as _pe:
+            logger.warning(f"Could not parse proxy URL for discovery browser: {_pe}")
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=False,
@@ -285,6 +310,8 @@ async def _discover_pages_facebook_native_async(
                 '--no-sandbox',
             ]
         )
+        if playwright_proxy:
+            ctx_opts['proxy'] = playwright_proxy
         context = await browser.new_context(**ctx_opts)
         page = await context.new_page()
         await page.add_init_script(stealth_js)
@@ -316,7 +343,31 @@ async def _discover_pages_facebook_native_async(
                     await page.fill('input[name="pass"]', facebook_password, timeout=10000)
                     await asyncio.sleep(random.uniform(0.4, 0.8))
 
-                    await page.click('button[name="login"]', timeout=10000)
+                    # Facebook's login button selector varies by region/render variant.
+                    # Try known selectors in order; fall back to pressing Enter on the
+                    # password field (which always submits the login form).
+                    login_button_selectors = [
+                        'button[name="login"]',
+                        '[data-testid="royal_login_button"]',
+                        'button[type="submit"]',
+                        'input[type="submit"]',
+                    ]
+                    clicked = False
+                    for sel in login_button_selectors:
+                        try:
+                            btn = await page.query_selector(sel)
+                            if btn:
+                                await btn.click(timeout=5000)
+                                clicked = True
+                                logger.info(f"Login button clicked via selector: {sel}")
+                                break
+                        except Exception:
+                            continue
+
+                    if not clicked:
+                        logger.info("No login button found via selectors — submitting with Enter key")
+                        await page.keyboard.press('Enter')
+
                     await asyncio.sleep(3)
 
                     # Wait for the login redirect to complete
