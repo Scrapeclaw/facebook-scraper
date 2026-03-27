@@ -295,89 +295,137 @@ async def _discover_pages_facebook_native_async(
             await page.goto('https://www.facebook.com', wait_until='domcontentloaded', timeout=30000)
             await asyncio.sleep(random.uniform(2, 4))
 
-            # Check if already logged in
-            if 'login' in page.url or 'checkpoint' in page.url:
+            # Detect login state by checking for the login form (email input), NOT by URL.
+            # On a fresh browser, Facebook shows the login form at facebook.com root — the URL
+            # stays as "https://www.facebook.com/" without redirecting to "/login/", so a URL
+            # check would always skip the login step.
+            email_input = await page.query_selector('input[name="email"]')
+            needs_login = email_input is not None
+
+            if needs_login:
                 if not facebook_email or not facebook_password:
-                    logger.warning("Not logged in and no credentials provided. Skipping login.")
+                    logger.warning("Login form detected but no credentials provided. Skipping.")
                     await browser.close()
                     return []
 
-                # Perform login
-                logger.info("Entering credentials...")
+                logger.info("Login form detected — entering credentials...")
                 try:
-                    # Enter email
                     await page.fill('input[name="email"]', facebook_email, timeout=10000)
-                    await asyncio.sleep(0.5)
-                    
-                    # Enter password
+                    await asyncio.sleep(random.uniform(0.4, 0.8))
+
                     await page.fill('input[name="pass"]', facebook_password, timeout=10000)
-                    await asyncio.sleep(0.5)
-                    
-                    # Click login button
+                    await asyncio.sleep(random.uniform(0.4, 0.8))
+
                     await page.click('button[name="login"]', timeout=10000)
                     await asyncio.sleep(3)
-                    
-                    # Wait for redirect after login
+
+                    # Wait for the login redirect to complete
                     try:
-                        await page.wait_for_url(lambda url: 'login' not in url and 'checkpoint' not in url, timeout=15000)
-                    except:
+                        await page.wait_for_url(
+                            lambda url: 'login' not in url and 'checkpoint' not in url,
+                            timeout=20000,
+                        )
+                    except Exception:
                         pass
-                    
+
                     await asyncio.sleep(random.uniform(2, 4))
+
+                    # Verify login succeeded: the email input should no longer be visible
+                    still_on_login = await page.query_selector('input[name="email"]')
+                    if still_on_login:
+                        logger.error(
+                            "Login appears to have failed (login form still present). "
+                            "Check credentials or if Facebook is blocking the login."
+                        )
+                        await browser.close()
+                        return []
+
                     logger.info("✅ Login successful")
-                    
+
                 except Exception as e:
                     logger.error(f"Login failed: {e}")
                     await browser.close()
                     return []
+            else:
+                logger.info("Already logged in (no login form detected).")
 
-            # Construct search URL based on entity type
+            # Construct search URL based on entity type.
+            # Use the dedicated /search/pages/ endpoint for pages — /search/top/ returns a
+            # mixed feed of profiles, groups, and pages and yields far fewer page-specific hits.
             if entity_type == 'group':
                 search_url = f'https://www.facebook.com/search/groups/?q={quote_plus(search_query)}'
             elif entity_type == 'profile':
                 search_url = f'https://www.facebook.com/search/people/?q={quote_plus(search_query)}'
             else:
-                # top search returns a broader set of results (pages, profiles, groups)
-                search_url = f'https://www.facebook.com/search/top/?q={quote_plus(search_query)}'
+                search_url = f'https://www.facebook.com/search/pages/?q={quote_plus(search_query)}'
 
             logger.info(f"🔍 Searching Facebook for: '{search_query}' ({entity_type}s)")
             await page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
             await asyncio.sleep(random.uniform(2, 4))
 
+            # If Facebook redirected back to login, the session did not survive navigation
+            if 'login' in page.url or 'checkpoint' in page.url:
+                logger.error(
+                    "Redirected to login after navigating to search — session is not authenticated. "
+                    "Verify credentials and that the account is not locked."
+                )
+                await browser.close()
+                return []
+
             # Scroll multiple times to load more results
             logger.info("📜 Loading search results...")
-            for i in range(5):
+            for i in range(6):
                 try:
                     await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
                     await asyncio.sleep(random.uniform(1.5, 2.5))
-                except:
+                except Exception:
                     pass
 
-            # Extract page list
-            html = await page.content()
+            # ── Strategy 1: DOM-based extraction ────────────────────────────
+            # Target anchor tags that point to facebook.com pages inside the
+            # search-results container; these are the actual result cards.
+            try:
+                dom_links = await page.evaluate("""
+                    () => {
+                        const anchors = Array.from(document.querySelectorAll('a[href]'));
+                        return anchors
+                            .map(a => a.href || '')
+                            .filter(h => h.includes('facebook.com/') && !h.includes('/search/'));
+                    }
+                """)
+                skip_set = set(FACEBOOK_BLACKLIST) | {'search', 'hashtag', 'public', 'undefined'}
+                for href in (dom_links or []):
+                    m = re.search(r'facebook\.com/([a-zA-Z0-9._-]{3,60})(?:[/?#]|$)', href)
+                    if not m:
+                        continue
+                    name = m.group(1).strip('.').strip('-')
+                    if (name.lower() not in skip_set
+                            and len(name) > 2
+                            and not name.isdigit()
+                            and re.search(r'[a-zA-Z0-9]{3,}', name)):
+                        found_names.add(name)
+                        logger.info(f"  Found (DOM): {name}")
+            except Exception as dom_err:
+                logger.debug(f"DOM extraction error: {dom_err}")
 
-            # Parse relevant page names from HTML
+            # ── Strategy 2: regex over raw HTML (catches JSON-hydrated data) ─
+            html = await page.content()
             skip_set = set(FACEBOOK_BLACKLIST) | {'search', 'hashtag', 'public', 'undefined'}
-            
-            # More aggressive regex to capture Facebook profile URLs
             patterns = [
-                r'facebook\.com/([a-zA-Z0-9._-]{3,60})(?:[/?#"\'\\]|&amp;|$)',  # Profile pages
-                r'href=["\']https?://www\.facebook\.com/([a-zA-Z0-9._-]{3,60})',  # Links
-                r'"profile_url":"https://www\.facebook\.com/([a-zA-Z0-9._-]{3,60})',  # Profile URLs in JSON
+                r'facebook\.com/([a-zA-Z0-9._-]{3,60})(?:[/?#"\'\\]|&amp;|$)',
+                r'href=["\']https?://www\.facebook\.com/([a-zA-Z0-9._-]{3,60})',
+                r'"profile_url":"https://www\.facebook\.com/([a-zA-Z0-9._-]{3,60})',
+                r'"url":"https://www\.facebook\.com/([a-zA-Z0-9._-]{3,60})',
             ]
-            
             for pattern in patterns:
-                hits = re.findall(pattern, html)
-                for name in hits:
+                for name in re.findall(pattern, html):
                     name = name.strip('.').strip('-')
                     if (name.lower() not in skip_set
                             and len(name) > 2
                             and not name.isdigit()
                             and re.search(r'[a-zA-Z0-9]{3,}', name)):
                         found_names.add(name)
-                        logger.info(f"  Found: {name}")
 
-            # Limit results
             results = list(found_names)[:num_results]
             logger.info(f"✅ Facebook native search found {len(results)} {entity_type}s")
 
